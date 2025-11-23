@@ -36,7 +36,6 @@ jobs:
       # --------------------
       # Security & Quality Gates
       # --------------------
-
       - name: SAST Security Scan (Bandit)
         run: |
           bandit -r app
@@ -58,7 +57,6 @@ jobs:
       # --------------------
       # Build & Cluster Tooling
       # --------------------
-
       - name: Build Docker image
         run: |
           docker build -t ${FULL_IMAGE} app
@@ -106,22 +104,27 @@ jobs:
       # --------------------
       # Terraform sanity checks BEFORE apply (fully automated)
       # --------------------
-      - name: Terraform sanity checks (fmt, validate, plan)
+      - name: Terraform sanity checks (fmt, init, validate, plan)
         working-directory: infra
         run: |
           echo "🧹 Running terraform fmt (auto-formatting Terraform files)..."
           terraform fmt -recursive
-          echo "✅ Format OK. Running validate + plan..."
+
+          echo "📥 Running terraform init..."
+          terraform init -backend=false
+
+          echo "🔍 Validate Terraform..."
           terraform validate
+
+          echo "🧠 Plan Terraform..."
           terraform plan -input=false -lock=false
 
       # --------------------
       # Terraform deploy
       # --------------------
-      - name: Terraform init & apply (deploy to kind-pe-demo)
+      - name: Terraform apply (deploy to kind-pe-demo)
         working-directory: infra
         run: |
-          terraform init -backend=false
           terraform apply -auto-approve -var "image=${FULL_IMAGE}"
 
       # --------------------
@@ -138,4 +141,3 @@ jobs:
           kubectl -n platform-demo wait deploy/hello-api --for=condition=available --timeout=60s
 
           echo "✅ Platform template sanity checks passed – ready to submit to C4E as a golden path."
-
