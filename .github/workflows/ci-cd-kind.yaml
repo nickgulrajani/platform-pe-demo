@@ -1,0 +1,84 @@
+name: CI/CD to kind-pe-demo (local + GitHub)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: hello-api
+      IMAGE_TAG: latest
+      FULL_IMAGE: hello-api:latest
+      KIND_CLUSTER: pe-demo
+      KUBE_CONTEXT: kind-pe-demo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          pip install -r app/requirements.txt
+
+      - name: Basic syntax check
+        run: |
+          python -m py_compile app/app.py
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${FULL_IMAGE} app
+
+      - name: Install kind, kubectl, terraform
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg lsb-release
+
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          rm kubectl
+
+          # Install kind
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+          # Install terraform
+          TF_VERSION="1.9.5"
+          curl -LO https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+          sudo apt-get install -y unzip
+          unzip terraform_${TF_VERSION}_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+          rm terraform_${TF_VERSION}_linux_amd64.zip
+
+      - name: Create or ensure kind cluster
+        run: |
+          if ! kind get clusters | grep -q "^${KIND_CLUSTER}$"; then
+            kind create cluster --name "${KIND_CLUSTER}"
+          else
+            echo "kind cluster ${KIND_CLUSTER} already exists."
+          fi
+
+      - name: Load image into kind cluster
+        run: |
+          kind load docker-image ${FULL_IMAGE} --name "${KIND_CLUSTER}"
+
+      - name: Configure kube context
+        run: |
+          kubectl config use-context ${KUBE_CONTEXT}
+          kubectl get nodes
+
+      - name: Terraform init & apply (deploy to kind-pe-demo)
+        working-directory: infra
+        run: |
+          terraform init -backend=false
+          terraform apply -auto-approve -var "image=${FULL_IMAGE}"
