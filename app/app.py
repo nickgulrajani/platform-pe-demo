@@ -11,5 +11,6 @@ def index():
     return jsonify(message="Hello from the Platform Engineering demo on port 5000!")
 
 if __name__ == "__main__":
-    # Bind to 0.0.0.0 so Kubernetes can route traffic
-    app.run(host="0.0.0.0", port=5000)
+    # In Kubernetes, binding to 0.0.0.0 is required so the Service can route traffic.
+    # We explicitly suppress Bandit B104 here while keeping the rest of SAST active.
+    app.run(host="0.0.0.0", port=5000)  # nosec B104

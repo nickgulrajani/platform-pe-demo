@@ -17,6 +17,9 @@ jobs:
       KUBE_CONTEXT: kind-pe-demo
 
     steps:
+      # --------------------
+      # Checkout & Python setup
+      # --------------------
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -30,7 +33,9 @@ jobs:
           pip install -r app/requirements.txt
           pip install bandit pytest coverage
 
-      # ---- Quality & Security Gates ----
+      # --------------------
+      # Security & Quality Gates
+      # --------------------
 
       - name: SAST Security Scan (Bandit)
         run: |
@@ -50,7 +55,9 @@ jobs:
         run: |
           python -m py_compile app/app.py
 
-      # ---- Build & Deploy ----
+      # --------------------
+      # Build & Deploy
+      # --------------------
 
       - name: Build Docker image
         run: |
