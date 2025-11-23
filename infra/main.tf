@@ -1,3 +1,11 @@
+# Namespace for the demo
+resource "kubernetes_namespace" "demo" {
+  metadata {
+    name = "platform-demo"
+  }
+}
+
+# Hardened Deployment with probes, resources, and securityContext
 resource "kubernetes_deployment" "hello" {
   # Avoid long waits in demos if pods aren't ready yet
   wait_for_rollout = false
@@ -73,12 +81,12 @@ resource "kubernetes_deployment" "hello" {
             }
           }
 
-          # --- Security context (fix CKV_K8S_28, 29, 30, and related) ---
+          # --- Security context (fix CKV_K8S_28, 29, 30, etc.) ---
           security_context {
-            run_as_non_root             = true
-            run_as_user                 = 1000
-            read_only_root_filesystem   = true
-            allow_privilege_escalation  = false
+            run_as_non_root            = true
+            run_as_user                = 1000
+            read_only_root_filesystem  = true
+            allow_privilege_escalation = false
 
             capabilities {
               drop = ["ALL"]
@@ -87,6 +95,27 @@ resource "kubernetes_deployment" "hello" {
         }
       }
     }
+  }
+}
+
+# Service to expose the app inside the cluster
+resource "kubernetes_service" "hello" {
+  metadata {
+    name      = "hello-api"
+    namespace = kubernetes_namespace.demo.metadata[0].name
+  }
+
+  spec {
+    selector = {
+      app = "hello-api"
+    }
+
+    port {
+      port        = 5000   # service port
+      target_port = 5000   # container port
+    }
+
+    type = "ClusterIP"
   }
 }
 
