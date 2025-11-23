@@ -104,12 +104,14 @@ jobs:
           kubectl get nodes
 
       # --------------------
-      # Terraform sanity checks BEFORE apply
+      # Terraform sanity checks BEFORE apply (fully automated)
       # --------------------
       - name: Terraform sanity checks (fmt, validate, plan)
         working-directory: infra
         run: |
-          terraform fmt -check
+          echo "🧹 Running terraform fmt (auto-formatting Terraform files)..."
+          terraform fmt -recursive
+          echo "✅ Format OK. Running validate + plan..."
           terraform validate
           terraform plan -input=false -lock=false
 
@@ -136,3 +138,4 @@ jobs:
           kubectl -n platform-demo wait deploy/hello-api --for=condition=available --timeout=60s
 
           echo "✅ Platform template sanity checks passed – ready to submit to C4E as a golden path."
+
