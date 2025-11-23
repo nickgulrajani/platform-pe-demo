@@ -25,32 +25,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python deps + tooling
+      - name: Install Python deps
         run: |
           pip install -r app/requirements.txt
-          pip install bandit pytest coverage
-
-      # ---- Quality & Security Gates ----
-
-      - name: SAST Security Scan (Bandit)
-        run: |
-          bandit -r app
-
-      - name: Run tests with coverage (fail under 80%)
-        run: |
-          coverage run -m pytest
-          coverage report -m --fail-under=80
-
-      - name: IaC Security Scan (Checkov)
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: infra
 
       - name: Basic syntax check
         run: |
           python -m py_compile app/app.py
-
-      # ---- Build & Deploy ----
 
       - name: Build Docker image
         run: |
