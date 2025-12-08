@@ -1,0 +1,143 @@
+name: CI/CD to kind-pe-demo (local + GitHub)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: hello-api
+      IMAGE_TAG: latest
+      FULL_IMAGE: hello-api:latest
+      KIND_CLUSTER: pe-demo
+      KUBE_CONTEXT: kind-pe-demo
+
+    steps:
+      # --------------------
+      # Checkout & Python setup
+      # --------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps + tooling
+        run: |
+          pip install -r app/requirements.txt
+          pip install bandit pytest coverage
+
+      # --------------------
+      # Security & Quality Gates
+      # --------------------
+      - name: SAST Security Scan (Bandit)
+        run: |
+          bandit -r app
+
+      - name: Run tests with coverage (fail under 80%)
+        run: |
+          coverage run -m pytest
+          coverage report -m --fail-under=80
+
+      - name: IaC Security Scan (Checkov)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+
+      - name: Basic syntax check
+        run: |
+          python -m py_compile app/app.py
+
+      # --------------------
+      # Build & Cluster Tooling
+      # --------------------
+      - name: Build Docker image
+        run: |
+          docker build -t ${FULL_IMAGE} app
+
+      - name: Install kind, kubectl, terraform
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg lsb-release
+
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          rm kubectl
+
+          # Install kind
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+          # Install terraform
+          TF_VERSION="1.9.5"
+          curl -LO https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+          sudo apt-get install -y unzip
+          unzip terraform_${TF_VERSION}_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+          rm terraform_${TF_VERSION}_linux_amd64.zip
+
+      - name: Create or ensure kind cluster
+        run: |
+          if ! kind get clusters | grep -q "^${KIND_CLUSTER}$"; then
+            kind create cluster --name "${KIND_CLUSTER}"
+          else
+            echo "kind cluster ${KIND_CLUSTER} already exists."
+          fi
+
+      - name: Load image into kind cluster
+        run: |
+          kind load docker-image ${FULL_IMAGE} --name "${KIND_CLUSTER}"
+
+      - name: Configure kube context
+        run: |
+          kubectl config use-context ${KUBE_CONTEXT}
+          kubectl get nodes
+
+      # --------------------
+      # Terraform sanity checks BEFORE apply (fully automated)
+      # --------------------
+      - name: Terraform sanity checks (fmt, init, validate, plan)
+        working-directory: infra
+        run: |
+          echo "🧹 Running terraform fmt (auto-formatting Terraform files)..."
+          terraform fmt -recursive
+
+          echo "📥 Running terraform init..."
+          terraform init -backend=false
+
+          echo "🔍 Validate Terraform..."
+          terraform validate
+
+          echo "🧠 Plan Terraform..."
+          terraform plan -input=false -lock=false
+
+      # --------------------
+      # Terraform deploy
+      # --------------------
+      - name: Terraform apply (deploy to kind-pe-demo)
+        working-directory: infra
+        run: |
+          terraform apply -auto-approve -var "image=${FULL_IMAGE}"
+
+      # --------------------
+      # Kubernetes sanity checks / C4E readiness
+      # --------------------
+      - name: Kubernetes sanity checks (C4E template readiness)
+        run: |
+          echo "🔍 Checking Kubernetes resources in namespace 'platform-demo'..."
+          kubectl -n platform-demo get deploy hello-api
+          kubectl -n platform-demo get pods
+          kubectl -n platform-demo get svc hello-api
+
+          echo "⏱ Waiting for deployment to become available..."
+          kubectl -n platform-demo wait deploy/hello-api --for=condition=available --timeout=60s
+
+          echo "✅ Platform template sanity checks passed – ready to submit to C4E as a golden path."
