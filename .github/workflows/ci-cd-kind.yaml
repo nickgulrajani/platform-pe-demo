@@ -135,4 +135,3 @@ jobs:
           kubectl -n platform-demo get svc hello-api
           kubectl -n platform-demo wait deploy/hello-api --for=condition=available --timeout=60s
           echo "✅ Deployment complete and verified"
-```
